@@ -235,7 +235,5 @@ clobber: clean
 # 3D raycaster port
 ###################
 
-FRAMEWORKS := $(shell [ "$$(uname)" = Darwin ] && echo "-framework CoreGraphics -framework CoreFoundation")
-
 prog3d: prog3d.c
-	${CC} -O2 -g -Wall -Wextra -o $@ prog3d.c -lcurses -lm ${FRAMEWORKS}
+	${CC} -O2 -g -Wall -Wextra -o $@ prog3d.c -lcurses -lm

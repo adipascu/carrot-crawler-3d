@@ -51,7 +51,9 @@ EM_JS(void, js_init, (int rows, int cols, int mouse), {
 		M.term.addEventListener("click", function() {
 			if (document.pointerLockElement != M.term)
 				M.term.requestPointerLock();
+			M.pushStr("\x1b[<0;" + vx + ";" + vy + "M");
 		});
+		addEventListener("blur", function() { M.push(0x1a0); });
 		document.addEventListener("pointerlockchange", function() {
 			if (document.pointerLockElement != M.term) M.push(27);
 		});

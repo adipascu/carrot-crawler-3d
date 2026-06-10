@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifdef __APPLE__
-#include <CoreGraphics/CoreGraphics.h>
-#endif
 
 #define M 1920
 #define L 80
@@ -18,17 +15,17 @@
 #define STEP 0.2
 #define BODY 0.28
 
+#ifndef KEY_FOCUS_OUT
+#define KEY_FOCUS_OUT 0x1a0
+#endif
+
 typedef struct { double dist, wx, wy; int ch, pair; } Spr;
 
 static int D[M], E[M], I[M], S[4];
 static int depth, money, seed, ticks, regenat, gens, health = 10;
-static int lo, hi, showmap, lastmx = -1, lastmy = -1, capturing = 1;
+static int lo, hi, showmap, lastmx = -1, lastmy = -1;
 static volatile sig_atomic_t quitsig;
 static double px, py, ang, pitch;
-#ifdef __APPLE__
-static double cellw = 8, cellh = 17;
-static int pend, pendmx, pendmy, penddx, penddy;
-#endif
 static double zbuf[ZMAX];
 
 static int edge(int i) { return i < L || i > 1839 || !(((i + 1) & ~1) % L); }
@@ -44,7 +41,7 @@ static void gen(void) {
     srand(seed);
     for (int i = L; i < M; i++) {
         int carved = (((i + 1) & ~1) % L) && i / L < 13 && i / L > P;
-        D[i] = !carved && (edge(i) || rand() % 100 < 45) ? '#' : '.';
+        D[i] = !carved && (edge(i) | (rand() % 100 < 45)) ? '#' : '.';
     }
     for (int pass = 0; pass < 2; pass++)
         for (int i = L; i < M; i++) {
@@ -123,47 +120,7 @@ static void clamp_pitch(void) {
     if (pitch < -LINES) pitch = -LINES;
 }
 
-static void recenter(int mx, int my) {
-#ifdef __APPLE__
-    if (!capturing) return;
-    if (mx >= 4 && mx <= COLS - 5 && my >= 3 && my <= LINES - 4) return;
-    CGEventRef ev = CGEventCreate(NULL);
-    CGPoint p = CGEventGetLocation(ev);
-    CFRelease(ev);
-    penddx = COLS / 2 - mx;
-    penddy = LINES / 2 - my;
-    CGWarpMouseCursorPosition(
-        CGPointMake(p.x + penddx * cellw, p.y + penddy * cellh));
-    pend = 1;
-    pendmx = mx;
-    pendmy = my;
-    lastmx = lastmy = -1;
-#else
-    (void)mx;
-    (void)my;
-#endif
-}
-
 static void mouselook(int mx, int my) {
-#ifdef __APPLE__
-    if (pend) {
-        pend = 0;
-        int adx = mx - pendmx, ady = my - pendmy;
-        if (abs(penddx) >= 4 && adx && (penddx > 0) == (adx > 0)) {
-            cellw = cellw * penddx / adx;
-            if (cellw < 4) cellw = 4;
-            if (cellw > 30) cellw = 30;
-        }
-        if (abs(penddy) >= 3 && ady && (penddy > 0) == (ady > 0)) {
-            cellh = cellh * penddy / ady;
-            if (cellh < 8) cellh = 8;
-            if (cellh > 44) cellh = 44;
-        }
-        lastmx = mx;
-        lastmy = my;
-        return;
-    }
-#endif
     if (lastmx >= 0) {
         int dx = mx - lastmx, dy = my - lastmy;
         if (abs(dx) < 25 && abs(dy) < 25) {
@@ -174,15 +131,14 @@ static void mouselook(int mx, int my) {
     }
     lastmx = mx;
     lastmy = my;
-    recenter(mx, my);
 }
 
-static void sgrmouse_rest(void) {
+static int sgrmouse_rest(void) {
     int c = getch();
     if (c != '<') {
         while (c != ERR && !(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z'))
             c = getch();
-        return;
+        return 0;
     }
     int n[3] = {0, 0, 0}, k = 0;
     for (;;) {
@@ -191,7 +147,10 @@ static void sgrmouse_rest(void) {
         else if (c == ';' && k < 2) k++;
         else break;
     }
-    if (c == 'M' || c == 'm') mouselook(n[1] - 1, n[2] - 1);
+    if (c == 'm') return 0;
+    if (c != 'M') return 0;
+    if (n[0] == 35) mouselook(n[1] - 1, n[2] - 1);
+    return n[0] == 0 ? 1 : 0;
 }
 
 static void sgrmouse(void) {
@@ -203,13 +162,11 @@ static int esc_or_mouse(void) {
     int c = getch();
     timeout(0);
     if (c == ERR) return 1;
-    if (c == '[') sgrmouse_rest();
+    if (c == '[') return sgrmouse_rest() ? 2 : 0;
     return 0;
 }
 
 static void pause_menu(int *running) {
-    int wascap = capturing;
-    capturing = 0;
     lastmx = lastmy = -1;
     timeout(250);
     int done = 0;
@@ -220,13 +177,13 @@ static void pause_menu(int *running) {
         attroff(A_BOLD);
         mvprintw(LINES / 2, (COLS - 27) / 2, "Mouse released while paused");
         attron(A_BOLD);
-        mvprintw(LINES / 2 + 2, (COLS - 22) / 2, "Esc/P resume    Q quit");
+        mvprintw(LINES / 2 + 2, (COLS - 26) / 2, "Click or P resumes  Q quits");
         attroff(COLOR_PAIR(7) | A_BOLD);
         refresh();
         int k = getch();
         switch (k) {
         case 27:
-            if (esc_or_mouse()) done = 1;
+            if (esc_or_mouse() == 2) done = 1;
             timeout(250);
             break;
         case 'p': case 'P': case ' ': case '\n': done = 1; break;
@@ -238,7 +195,6 @@ static void pause_menu(int *running) {
         }
         }
     }
-    capturing = wascap;
     lastmx = lastmy = -1;
     flushinp();
     timeout(0);
@@ -335,9 +291,9 @@ static void render(void) {
     attron(COLOR_PAIR(7) | A_BOLD);
     if (!showmap && horizon > 0 && horizon < LINES - 1)
         mvaddch(horizon, cols / 2, '+');
-    mvprintw(0, 0, "Score:%d|hp:(%d/%d)|floor:%d|Argv:%x:%02x:%02x:%02x:%02x:%02x",
+    mvprintw(0, 0, "Score:%d|hp:(%d/%d)|floor:%d|Argv{:%x:%02x:%02x:%02x:%02x:%02x:}",
              money, health, P, depth, seed, depth, health, (int)py, (int)px, money);
-    mvprintw(LINES - 1, 0, "WASD move  mouse looks  T teleport(3$)  M map  C capture  Esc pause  Q quit");
+    mvprintw(LINES - 1, 0, "click to aim  WASD move  T teleport(3$)  M map  Esc pause  Q quit");
     attroff(COLOR_PAIR(7) | A_BOLD);
     refresh();
 }
@@ -367,7 +323,7 @@ int main(int argc, char **argv) {
         int ldrow = (int)py, ldcol = (int)px;
         int *slot[] = {&seed, &depth, &health, &ldrow, &ldcol, &money};
         char *cur = argv[1], *end;
-        if (*cur && !ishex(*cur)) cur++;
+        while (*cur && !ishex(*cur)) cur++;
         int nf = 0;
         while (nf < 6 && *cur) {
             slot[nf][0] = (int)strtol(cur, &end, 16);
@@ -397,7 +353,6 @@ int main(int argc, char **argv) {
     init_pair(5, COLOR_BLACK, COLOR_CYAN);
     init_pair(6, COLOR_BLACK, COLOR_MAGENTA);
     init_pair(7, COLOR_WHITE, COLOR_BLACK);
-    if (getenv("PROG3D_NOCAPTURE")) capturing = 0;
     mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
     mouseinterval(0);
     printf("\033[?1002h\033[?1003h\033[?1006h");
@@ -427,7 +382,6 @@ int main(int argc, char **argv) {
             case KEY_UP: pitch += 1.5; clamp_pitch(); break;
             case KEY_DOWN: pitch -= 1.5; clamp_pitch(); break;
             case 'm': case 'M': showmap = !showmap; break;
-            case 'c': case 'C': capturing = !capturing; break;
             case 't': case 'T':
                 if (money >= 3) {
                     cell = N();
@@ -443,10 +397,14 @@ int main(int argc, char **argv) {
                 break;
             }
             case 27:
-                if (esc_or_mouse()) {
+                if (esc_or_mouse() == 1) {
                     pause_menu(&running);
                     last = now_ms();
                 }
+                break;
+            case KEY_FOCUS_OUT:
+                pause_menu(&running);
+                last = now_ms();
                 break;
             case 'p': case 'P':
                 pause_menu(&running);
@@ -515,7 +473,6 @@ int main(int argc, char **argv) {
         }
         if (health < 1 || depth > 99 || quitsig) running = 0;
     }
-    capturing = 0;
     if (!quitsig && (health < 1 || depth > 99)) {
         const char *title = health < 1 ? "EATEN BY CARROTS" : "YOU WIN!";
         timeout(-1);
@@ -532,7 +489,7 @@ int main(int argc, char **argv) {
         do {
             k = getch();
             if (k == 27) { sgrmouse(); k = KEY_MOUSE; }
-        } while (!quitsig && (k == KEY_MOUSE || k == ERR));
+        } while (!quitsig && (k == KEY_MOUSE || k == ERR || k == KEY_FOCUS_OUT));
     }
     endwin();
     mouse_off();

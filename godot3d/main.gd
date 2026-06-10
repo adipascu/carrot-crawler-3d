@@ -10,7 +10,12 @@ const MAXHP := 10
 const REGEN_S := 2.8
 
 var rng := RandomNumberGenerator.new()
+var lcg_state := 0
 var grid := PackedInt32Array()
+var enemy_cells: Array[int] = []
+var coin_cells: Array[int] = []
+var loaded_row := -1
+var loaded_col := -1
 var seed_v := 0
 var depth := 0
 var money := 0
@@ -48,12 +53,21 @@ func _ready() -> void:
 	_build_ui()
 	_build_audio()
 	var args := OS.get_cmdline_user_args()
-	for a in args:
-		if ":" in a:
-			_load_save(a)
 	gen()
+	var spawn := rand_floor_cell()
+	var loaded := false
+	for a in args:
+		if ":" in a and _load_save(a):
+			loaded = true
+	if not loaded and OS.has_feature("web"):
+		var qs := str(JavaScriptBridge.eval(
+				"new URLSearchParams(location.search).get('save')||''", true))
+		if qs.length() >= 11:
+			loaded = _load_save(qs)
+	if loaded:
+		gen()
 	build_level()
-	_place_player(rand_floor_cell())
+	_place_player(loaded_row * L + loaded_col if loaded else spawn)
 	if "--selftest" in args:
 		selftest()
 	elif "--screenshot" in args:
@@ -70,14 +84,35 @@ func screenshot_run() -> void:
 	get_tree().quit()
 
 
-func _load_save(s: String) -> void:
-	var parts := s.split(":")
-	if parts.size() != 6:
-		return
-	seed_v = ("0x" + parts[0]).hex_to_int()
-	depth = ("0x" + parts[1]).hex_to_int()
-	health = clampi(("0x" + parts[2]).hex_to_int(), 1, MAXHP)
-	money = ("0x" + parts[5]).hex_to_int()
+func _load_save(s: String) -> bool:
+	var re := RegEx.create_from_string("[0-9a-fA-F]+")
+	var found := re.search_all(s)
+	if found.size() < 6:
+		return false
+	var f: Array[int] = []
+	for k in 6:
+		f.append(("0x" + found[k].get_string()).hex_to_int())
+	seed_v = f[0]
+	depth = f[1]
+	health = clampi(f[2], 1, MAXHP)
+	loaded_row = clampi(f[3], 1, ROWS - 1)
+	loaded_col = clampi(f[4], 0, L - 1)
+	money = f[5]
+	return true
+
+
+func save_token() -> String:
+	return ":%x:%02x:%02x:%02x:%02x:%02x:" % [seed_v, depth, health,
+			int(player.position.z / CELL), int(player.position.x / CELL), money]
+
+
+func lcg_srand(s: int) -> void:
+	lcg_state = (s & 0xFFFFFFFF) - 1
+
+
+func lcg_rand() -> int:
+	lcg_state = lcg_state * 6364136223846793005 + 1
+	return (lcg_state >> 33) & 0x7FFFFFFF
 
 
 func edge(i: int) -> bool:
@@ -87,26 +122,40 @@ func edge(i: int) -> bool:
 @warning_ignore("integer_division")
 func gen() -> void:
 	gens += 1
-	rng.seed = seed_v
+	lcg_srand(seed_v)
 	for i in range(0, L):
 		grid[i] = 0
 	for i in range(L, M):
 		var carved := ((i + 1) & ~1) % L != 0 and i / L < 13 and i / L > 10
-		grid[i] = WALL if not carved and (edge(i) or rng.randi() % 100 < 45) else OPEN
+		if carved:
+			grid[i] = OPEN
+		else:
+			var dug := lcg_rand() % 100 < 45
+			grid[i] = WALL if edge(i) or dug else OPEN
 	for _pass in 2:
 		for i in range(L, M):
 			if not edge(i):
 				var s := grid[i - 81] + grid[i - L] + grid[i - 79] + grid[i - 1] + grid[i] \
 						+ grid[i + 1] + grid[i + 79] + grid[i + L] + grid[i + 81]
 				grid[i] = WALL if s < 360 else OPEN
-	down_cell = rand_floor_cell() if depth < 100 else -1
-	up_cell = rand_floor_cell() if depth > 0 else -1
-	rng.seed = seed_v * gens
+	var cell := rand_floor_cell()
+	down_cell = cell if depth < 100 else -1
+	cell = rand_floor_cell()
+	up_cell = cell if depth > 0 else -1
+	lcg_srand(seed_v * gens)
+	enemy_cells.clear()
+	coin_cells.clear()
+	var lo := 6 * depth
+	var hi := lo + (6 + depth / 5 if depth < 100 else 0)
+	for j in range(lo, hi):
+		if j < 600:
+			enemy_cells.append(rand_floor_cell())
+			coin_cells.append(rand_floor_cell())
 
 
 func rand_floor_cell() -> int:
 	for _i in 100000:
-		var i := rng.randi() % M
+		var i := lcg_rand() % M
 		if grid[i] == OPEN:
 			return i
 	return L + 1
@@ -347,7 +396,7 @@ func _glow_mat(c: Color) -> StandardMaterial3D:
 	mat.albedo_color = c
 	mat.emission_enabled = true
 	mat.emission = c
-	mat.emission_energy_multiplier = 2.0
+	mat.emission_energy_multiplier = 1.2
 	return mat
 
 
@@ -363,8 +412,8 @@ func _build_environment() -> void:
 	env.fog_density = 0.012
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.glow_enabled = true
-	env.glow_intensity = 0.7
-	env.glow_bloom = 0.15
+	env.glow_intensity = 0.45
+	env.glow_bloom = 0.04
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -464,9 +513,9 @@ func build_level() -> void:
 		walls_body.add_child(wc)
 
 	_spawn_torches()
-	for _i in entity_count():
-		_spawn_coin(rand_floor_cell())
-		_spawn_enemy(rand_floor_cell())
+	for j in enemy_cells.size():
+		_spawn_enemy(enemy_cells[j])
+		_spawn_coin(coin_cells[j])
 	if down_cell >= 0:
 		_spawn_portal(down_cell, 1, Color(0.2, 0.9, 1.0))
 	if up_cell >= 0:
@@ -718,10 +767,13 @@ func set_paused(p: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed \
-			and not game_paused and not ended \
-			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if event is InputEventMouseButton and event.pressed and not ended:
+		if game_paused:
+			set_paused(false)
+		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE, KEY_P:
@@ -732,6 +784,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					teleport()
 			KEY_M:
 				minimap.visible = not minimap.visible
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and not ended and not game_paused:
+		set_paused(true)
 
 
 @warning_ignore("integer_division")
@@ -754,7 +811,7 @@ func _process(delta: float) -> void:
 	var pcol := int(player.position.x / CELL)
 	hud_stats.text = "HP [%s%s]   Gold %d   Floor %d" % [
 		"#".repeat(maxi(health, 0)), "-".repeat(MAXHP - maxi(health, 0)), money, depth]
-	hud_save.text = "Save: %x:%02x:%02x:%02x:%02x:%02x" % [seed_v, depth, health, prow, pcol, money]
+	hud_save.text = "Save " + save_token()
 	if minimap.visible:
 		minimap.queue_redraw()
 
@@ -825,6 +882,7 @@ func _build_ui() -> void:
 func _menu_panel() -> Control:
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var vbox := VBoxContainer.new()
 	vbox.name = "vbox"
@@ -859,6 +917,16 @@ func _menu_layer(title: String, subtitle: String, btn_text: String, btn_fn: Call
 	b.text = btn_text
 	b.pressed.connect(btn_fn)
 	panel.get_node("vbox").add_child(b)
+	var cp := Button.new()
+	cp.text = "Copy save"
+	cp.pressed.connect(func(): DisplayServer.clipboard_set(save_token()))
+	panel.get_node("vbox").add_child(cp)
+	var cl := Button.new()
+	cl.text = "Copy link with save"
+	cl.pressed.connect(func(): DisplayServer.clipboard_set(
+			str(JavaScriptBridge.eval("location.origin+location.pathname", true))
+			+ "?save=" + save_token().uri_encode()))
+	panel.get_node("vbox").add_child(cl)
 	panel.get_node("vbox").add_child(_source_button())
 	return layer
 

@@ -35,6 +35,15 @@ python3 -m http.server -d godot3d/web
 
 Then open http://localhost:8000 in a browser.
 
+## Saves
+
+All versions share the original entry's save format, shown in the HUD:
+`:seed:floor:hp:y:x:money:` (hex fields). A token exported from one version restores
+the same dungeon, position, and progress in any other, including the untouched
+original. Pass it as the command line argument or the `?save=` URL parameter; the
+browser pages have export and import controls, and the 3D version has a copy
+button in its pause menu.
+
 ## License
 
 [CC BY-SA 4.0](LICENSE), the license of the original entry. Original game by the author of IOCCC 2025 entry [`jhshrvdp`](https://www.ioccc.org/2025/jhshrvdp/index.html).

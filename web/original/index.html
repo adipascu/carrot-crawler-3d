@@ -14,6 +14,12 @@ h1 { font-size: 18px; font-weight: 600; }
 nav { margin-top: 10px; font-size: 13px; }
 nav a { color: #8ac; text-decoration: none; margin: 0 10px; }
 nav a:hover { text-decoration: underline; }
+#savebar { margin: 6px 0; }
+#savebar input { background: #0a0a0a; color: #ccc; border: 1px solid #444;
+                 border-radius: 6px; padding: 5px 8px; font: 13px monospace; width: 300px; }
+#savebar button { background: #222; color: #ccc; border: 1px solid #444;
+                  border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+#savebar button:hover { border-color: #8ac; }
 p.keys { font-size: 13px; color: #888; }
 </style>
 </head>
@@ -22,6 +28,11 @@ p.keys { font-size: 13px; color: #888; }
 <p class="keys">WASD moves, T teleports (3 score), Q quits. Every keypress is one turn.</p>
 <pre id="term"></pre>
 <div id="status"></div>
+<div id="savebar">
+<input id="saveinp" placeholder=":seed:floor:hp:y:x:money:" spellcheck="false">
+<button id="loadbtn">Load</button>
+<button id="exportbtn">Export save</button>
+</div>
 <nav>
 <a href="../">all versions</a>
 <a href="https://github.com/adipascu/carrot-crawler-3d" rel="noopener">source</a>
@@ -37,6 +48,20 @@ var Module = {
 				line + "  (reload the page to play again)";
 	}
 };
+</script>
+<script>
+document.getElementById("loadbtn").onclick = function() {
+	var v = document.getElementById("saveinp").value.trim();
+	location.search = v ? "?save=" + encodeURIComponent(v) : "";
+};
+document.getElementById("exportbtn").onclick = function() {
+	var m = document.getElementById("term").innerText.match(/:[0-9a-f]+(?::[0-9a-f]{2}){5}:/);
+	if (!m) return;
+	document.getElementById("saveinp").value = m[0];
+	history.replaceState(null, "", "?save=" + encodeURIComponent(m[0]));
+	if (navigator.clipboard) navigator.clipboard.writeText(m[0]);
+};
+if (params.get("save")) document.getElementById("saveinp").value = params.get("save");
 </script>
 <script src="prog.js"></script>
 </body>

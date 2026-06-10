@@ -17,7 +17,7 @@ import pyte
 
 HUD_RE = re.compile(
     r"Score:(\d+)\|hp:\((-?\d+)/\d+\)\|floor:(\d+)\|"
-    r"Argv:([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+)")
+    r"Argv\{:([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):\}")
 
 
 class Game:
@@ -27,8 +27,7 @@ class Game:
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         cmd = ["./prog3d"] + ([save] if save else [])
-        env = dict(os.environ, TERM="xterm", LINES="24", COLUMNS="80",
-                   PROG3D_NOCAPTURE="1")
+        env = dict(os.environ, TERM="xterm", LINES="24", COLUMNS="80")
         self.proc = subprocess.Popen(cmd, stdin=slave, stdout=slave,
                                      stderr=slave, env=env, close_fds=True)
         os.close(slave)
