@@ -30,8 +30,8 @@ p.keys { font-size: 13px; color: #888; }
 <div id="status"></div>
 <div id="savebar">
 <input id="saveinp" placeholder=":seed:floor:hp:y:x:money:" spellcheck="false">
+<button id="copybtn">Copy</button>
 <button id="loadbtn">Load</button>
-<button id="exportbtn">Export save</button>
 </div>
 <nav>
 <a href="../">all versions</a>
@@ -41,7 +41,10 @@ p.keys { font-size: 13px; color: #888; }
 <script>
 var params = new URLSearchParams(location.search);
 var Module = {
-	arguments: params.get("save") ? [params.get("save")] : [],
+	arguments: (function() {
+		var t = params.get("save") || sessionStorage.getItem("save");
+		return t ? [t] : [];
+	})(),
 	print: function(line) {
 		if (line && line.charCodeAt(0) !== 27)
 			document.getElementById("status").textContent =
@@ -50,18 +53,41 @@ var Module = {
 };
 </script>
 <script>
-document.getElementById("loadbtn").onclick = function() {
-	var v = document.getElementById("saveinp").value.trim();
-	location.search = v ? "?save=" + encodeURIComponent(v) : "";
-};
-document.getElementById("exportbtn").onclick = function() {
+var saveField = document.getElementById("saveinp");
+var tracking = true;
+saveField.addEventListener("focus", function() { tracking = false; saveField.select(); });
+document.getElementById("term").addEventListener("mousedown", function() {
+	tracking = true;
+	saveField.blur();
+});
+addEventListener("keydown", function(e) {
+	var el = document.activeElement;
+	if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) tracking = true;
+});
+setInterval(function() {
+	if (!tracking) return;
 	var m = document.getElementById("term").innerText.match(/:[0-9a-f]+(?::[0-9a-f]{2}){5}:/);
-	if (!m) return;
-	document.getElementById("saveinp").value = m[0];
-	history.replaceState(null, "", "?save=" + encodeURIComponent(m[0]));
-	if (navigator.clipboard) navigator.clipboard.writeText(m[0]);
+	if (m) saveField.value = m[0];
+}, 500);
+saveField.addEventListener("paste", function(e) {
+	e.preventDefault();
+	var t = (e.clipboardData || window.clipboardData).getData("text");
+	var m = t.match(/:[0-9a-f]+(?::[0-9a-f]{2}){5}:/);
+	saveField.value = m ? m[0] : t.trim();
+});
+document.getElementById("copybtn").onclick = function() {
+	if (saveField.value && navigator.clipboard)
+		navigator.clipboard.writeText(saveField.value);
 };
-if (params.get("save")) document.getElementById("saveinp").value = params.get("save");
+document.getElementById("loadbtn").onclick = function() {
+	var v = saveField.value.trim();
+	var m = v.match(/:[0-9a-f]+(?::[0-9a-f]{2}){5}:/);
+	if (m) v = m[0];
+	if (!v) return;
+	sessionStorage.setItem("save", v);
+	history.replaceState(null, "", location.pathname);
+	location.reload();
+};
 </script>
 <script src="prog.js"></script>
 </body>

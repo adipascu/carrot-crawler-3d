@@ -101,6 +101,16 @@ func _load_save(s: String) -> bool:
 	return true
 
 
+func apply_save(s: String) -> bool:
+	if not _load_save(s):
+		return false
+	gens = 1
+	gen()
+	build_level()
+	_place_player(loaded_row * L + loaded_col)
+	return true
+
+
 func save_token() -> String:
 	return ":%x:%02x:%02x:%02x:%02x:%02x:" % [seed_v, depth, health,
 			int(player.position.z / CELL), int(player.position.x / CELL), money]
@@ -921,6 +931,19 @@ func _menu_layer(title: String, subtitle: String, btn_text: String, btn_fn: Call
 	cp.text = "Copy save"
 	cp.pressed.connect(func(): DisplayServer.clipboard_set(save_token()))
 	panel.get_node("vbox").add_child(cp)
+	var paste := LineEdit.new()
+	paste.placeholder_text = "paste a save here"
+	paste.select_all_on_focus = true
+	paste.custom_minimum_size = Vector2(340, 0)
+	paste.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.get_node("vbox").add_child(paste)
+	var ld := Button.new()
+	ld.text = "Load save"
+	ld.pressed.connect(func():
+		if apply_save(paste.text):
+			paste.text = ""
+			set_paused(false))
+	panel.get_node("vbox").add_child(ld)
 	var cl := Button.new()
 	cl.text = "Copy link with save"
 	cl.pressed.connect(func(): DisplayServer.clipboard_set(
@@ -972,6 +995,10 @@ func selftest() -> void:
 			foe.global_position.distance_to(foe_pos) < 0.001])
 	checks.append(["no damage while paused", health == hp0])
 	set_paused(false)
+	checks.append(["apply_save imports", apply_save(":1:00:0a:0c:28:00:")
+			and seed_v == 1 and depth == 0
+			and int(player.position.z / CELL) == 12
+			and int(player.position.x / CELL) == 40])
 	damage(99)
 	checks.append(["death ends game", ended and end_title.text == "EATEN BY CARROTS"])
 	get_tree().paused = false

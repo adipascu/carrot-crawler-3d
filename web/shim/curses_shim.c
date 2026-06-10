@@ -42,6 +42,8 @@ EM_JS(void, js_init, (int rows, int cols, int mouse), {
 	};
 	addEventListener("keydown", function(e) {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		var el = document.activeElement;
+		if (el && (el.tagName == "INPUT" || el.tagName == "TEXTAREA")) return;
 		if (e.key in special) { M.push(special[e.key]); e.preventDefault(); }
 		else if (e.key.length == 1) { M.push(e.key.charCodeAt(0)); e.preventDefault(); }
 	});
