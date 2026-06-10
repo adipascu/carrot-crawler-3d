@@ -22,6 +22,7 @@ var regen_accum := 0.0
 var stairs_lock := 0.0
 var game_paused := false
 var ended := false
+var was_captured := false
 
 var level_root: Node3D
 var player: CharacterBody3D
@@ -35,6 +36,7 @@ var end_stats: Label
 var flash_rect: ColorRect
 var enemies: Array[Node3D] = []
 var coins: Array[Area3D] = []
+var sfx := {}
 
 
 func _ready() -> void:
@@ -44,6 +46,7 @@ func _ready() -> void:
 	_build_environment()
 	_build_player()
 	_build_ui()
+	_build_audio()
 	var args := OS.get_cmdline_user_args()
 	for a in args:
 		if ":" in a:
@@ -55,8 +58,6 @@ func _ready() -> void:
 		selftest()
 	elif "--screenshot" in args:
 		screenshot_run()
-	else:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func screenshot_run() -> void:
@@ -176,6 +177,171 @@ func _flame_particles(color: Color, amount := 14, radius := 0.06) -> GPUParticle
 	return p
 
 
+func _pcm(samples: PackedFloat32Array, rate := 22050, loop := false) -> AudioStreamWAV:
+	var bytes := PackedByteArray()
+	bytes.resize(samples.size() * 2)
+	for i in samples.size():
+		bytes.encode_s16(i * 2, int(clampf(samples[i], -1.0, 1.0) * 32767.0))
+	var ws := AudioStreamWAV.new()
+	ws.format = AudioStreamWAV.FORMAT_16_BITS
+	ws.mix_rate = rate
+	ws.stereo = false
+	ws.data = bytes
+	if loop:
+		ws.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		ws.loop_end = samples.size()
+	return ws
+
+
+func _chirp(f0: float, f1: float, dur: float, gain := 0.7) -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(dur * rate)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / n
+		phase += TAU * lerpf(f0, f1, t) / rate
+		var env := minf(t * 30.0, 1.0) * pow(1.0 - t, 1.6)
+		s[i] = (sin(phase) + 0.3 * sin(phase * 2.0)) * env * gain
+	return _pcm(s)
+
+
+func _thud() -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(0.25 * rate)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var phase := 0.0
+	var rumble := 0.0
+	for i in n:
+		var t := float(i) / n
+		phase += TAU * lerpf(150.0, 55.0, t) / rate
+		rumble = rumble * 0.72 + (randf() * 2.0 - 1.0) * 0.28
+		var env := minf(t * 40.0, 1.0) * pow(1.0 - t, 2.2)
+		s[i] = (sin(phase) * 0.8 + rumble * 0.7) * env
+	return _pcm(s)
+
+
+func _jingle(notes: Array) -> AudioStreamWAV:
+	var rate := 22050
+	var note_n := int(0.16 * rate)
+	var s := PackedFloat32Array()
+	s.resize(note_n * notes.size())
+	for k in notes.size():
+		var phase := 0.0
+		for i in note_n:
+			var t := float(i) / note_n
+			phase += TAU * float(notes[k]) / rate
+			var env := minf(t * 25.0, 1.0) * pow(1.0 - t, 1.3)
+			s[k * note_n + i] = (sin(phase) + 0.25 * sin(phase * 3.0)) * env * 0.6
+	return _pcm(s)
+
+
+func _cave_drone() -> AudioStreamWAV:
+	var rate := 11025
+	var n := rate * 4
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var acc := 0.0
+	var peak := 0.001
+	for i in n:
+		acc = acc * 0.998 + (randf() * 2.0 - 1.0) * 0.04
+		var swell := 1.0 + 0.4 * sin(TAU * float(i) / n)
+		s[i] = acc * swell
+		peak = maxf(peak, absf(s[i]))
+	for i in n:
+		s[i] = s[i] / peak * 0.8
+	return _pcm(s, rate, true)
+
+
+func _midi(n: int) -> float:
+	return 440.0 * pow(2.0, (n - 69) / 12.0)
+
+
+func _render_note(buf: PackedFloat32Array, rate: int, start: float, dur: float,
+		freq: float, vol: float, attack: float, bright: float, fade := 0.001) -> void:
+	var i0 := int(start * rate)
+	var n := int(dur * rate)
+	var phase := 0.0
+	var w := TAU * freq / rate
+	var decay := 1.0
+	var dfac := pow(fade, 1.0 / n)
+	var atk_n := maxf(attack * rate, 1.0)
+	for i in n:
+		var idx := i0 + i
+		if idx >= buf.size():
+			return
+		phase += w
+		decay *= dfac
+		var env := minf(i / atk_n, 1.0) * decay
+		var v := sin(phase)
+		if bright > 0.0:
+			v += bright * sin(phase * 2.0) + bright * 0.4 * sin(phase * 3.0)
+		buf[idx] += v * vol * env
+
+
+func _build_music() -> void:
+	var rate := 9000
+	var beat := 60.0 / 84.0
+	var bars := 8
+	var buf := PackedFloat32Array()
+	buf.resize(int(bars * 4.0 * beat * rate))
+	var roots := [45, 41, 48, 43, 45, 41, 38, 40]
+	var thirds := {45: 3, 41: 4, 48: 4, 43: 4, 38: 3, 40: 4}
+	for b in bars:
+		var t0 := b * 4.0 * beat
+		var root: int = roots[b]
+		var third: int = thirds[root]
+		_render_note(buf, rate, t0, 4.0 * beat, _midi(root - 12), 0.34, 0.01, 0.25, 0.1)
+		for iv in [0, third, 7]:
+			_render_note(buf, rate, t0, 4.0 * beat, _midi(root + 12 + iv), 0.065, 0.9, 0.0, 0.05)
+		var seq := [0, 7, 12, third + 12, 19, 12, third + 12, 7]
+		for e in 8:
+			_render_note(buf, rate, t0 + e * beat / 2.0, 0.3,
+					_midi(root + 24 + seq[e]), 0.085, 0.004, 0.5)
+	var melody := [[1.0, 81], [2.5, 79], [3.5, 76], [4.5, 81], [6.0, 74], [7.0, 76]]
+	for m in melody:
+		_render_note(buf, rate, m[0] * 4.0 * beat, 1.8, _midi(m[1]), 0.085, 0.01, 0.12)
+	var peak := 0.001
+	for i in buf.size():
+		peak = maxf(peak, absf(buf[i]))
+	for i in buf.size():
+		buf[i] = buf[i] / peak * 0.85
+	var music := AudioStreamPlayer.new()
+	music.stream = _pcm(buf, rate, true)
+	music.volume_db = -13.0
+	music.autoplay = true
+	music.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(music)
+
+
+func _build_audio() -> void:
+	_build_music.call_deferred()
+	sfx["coin"] = _chirp(900.0, 1900.0, 0.16)
+	sfx["bite"] = _thud()
+	sfx["teleport"] = _chirp(1400.0, 250.0, 0.35)
+	sfx["stairs"] = _chirp(180.0, 620.0, 0.5)
+	sfx["win"] = _jingle([523, 659, 784, 1047, 1319])
+	sfx["lose"] = _jingle([392, 311, 233, 156, 98])
+	var amb := AudioStreamPlayer.new()
+	amb.stream = _cave_drone()
+	amb.volume_db = -22.0
+	amb.autoplay = true
+	amb.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(amb)
+
+
+func play_sfx(sound: String) -> void:
+	var p := AudioStreamPlayer.new()
+	p.stream = sfx[sound]
+	p.volume_db = -8.0
+	p.process_mode = Node.PROCESS_MODE_ALWAYS
+	p.finished.connect(p.queue_free)
+	add_child(p)
+	p.play()
+
+
 func _glow_mat(c: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = c
@@ -188,10 +354,10 @@ func _glow_mat(c: Color) -> StandardMaterial3D:
 func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.01, 0.01, 0.015)
+	env.background_color = Color(0.03, 0.03, 0.04)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.45, 0.43, 0.52)
-	env.ambient_light_energy = 1.1
+	env.ambient_light_color = Color(0.55, 0.53, 0.62)
+	env.ambient_light_energy = 1.7
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.015, 0.015, 0.025)
 	env.fog_density = 0.012
@@ -199,10 +365,6 @@ func _build_environment() -> void:
 	env.glow_enabled = true
 	env.glow_intensity = 0.7
 	env.glow_bloom = 0.15
-	env.ssao_enabled = true
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.025
-	env.volumetric_fog_albedo = Color(0.55, 0.55, 0.65)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -226,8 +388,8 @@ func _build_player() -> void:
 	var torch := OmniLight3D.new()
 	torch.position.y = 1.6
 	torch.light_color = Color(1.0, 0.82, 0.55)
-	torch.light_energy = 3.8
-	torch.omni_range = 22.0
+	torch.light_energy = 4.6
+	torch.omni_range = 32.0
 	torch.shadow_enabled = true
 	torch.set_script(load("res://torch.gd"))
 	player.add_child(torch)
@@ -342,7 +504,7 @@ func _spawn_torches() -> void:
 			var light := OmniLight3D.new()
 			light.light_color = Color(1.0, 0.6, 0.25)
 			light.light_energy = 1.1
-			light.omni_range = 6.0
+			light.omni_range = 9.0
 			light.set_script(load("res://torch.gd"))
 			torch.add_child(light)
 			level_root.add_child(torch)
@@ -478,6 +640,7 @@ func collect_coin(coin: Area3D) -> void:
 	if ended:
 		return
 	money += 1
+	play_sfx("coin")
 	var sparkle := _flame_particles(Color(1.0, 0.9, 0.3), 20, 0.25)
 	sparkle.one_shot = true
 	sparkle.explosiveness = 1.0
@@ -492,6 +655,7 @@ func damage(n: int) -> void:
 	if ended:
 		return
 	health -= n
+	play_sfx("bite")
 	flash_rect.color.a = 0.45
 	if health < 1:
 		end_game("EATEN BY CARROTS")
@@ -501,6 +665,7 @@ func teleport() -> void:
 	if money < 3 or ended:
 		return
 	money -= 3
+	play_sfx("teleport")
 	_place_player(rand_floor_cell())
 
 
@@ -512,6 +677,7 @@ func use_stairs(delta: int) -> void:
 	if depth > 99:
 		end_game("YOU WIN!")
 		return
+	play_sfx("stairs")
 	gen()
 	build_level()
 	_place_player(up_cell if delta == 1 else down_cell)
@@ -519,6 +685,7 @@ func use_stairs(delta: int) -> void:
 
 func end_game(title: String) -> void:
 	ended = true
+	play_sfx("win" if title == "YOU WIN!" else "lose")
 	end_title.text = title
 	end_stats.text = "Gold: %d    Floor: %d" % [money, depth]
 	end_layer.visible = true
@@ -551,6 +718,10 @@ func set_paused(p: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed \
+			and not game_paused and not ended \
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE, KEY_P:
@@ -561,13 +732,14 @@ func _unhandled_input(event: InputEvent) -> void:
 					teleport()
 			KEY_M:
 				minimap.visible = not minimap.visible
-			KEY_Q:
-				if game_paused or ended:
-					get_tree().quit()
 
 
 @warning_ignore("integer_division")
 func _process(delta: float) -> void:
+	if not game_paused and not ended and was_captured \
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		set_paused(true)
+	was_captured = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if flash_rect.color.a > 0:
 		flash_rect.color.a = maxf(0.0, flash_rect.color.a - delta * 1.5)
 	if game_paused or ended:
@@ -610,7 +782,7 @@ func _build_ui() -> void:
 	hud.add_child(hud_save)
 
 	var hint := Label.new()
-	hint.text = "WASD move · mouse looks · T teleport (3 gold) · M map · Esc pause"
+	hint.text = "click to capture mouse · WASD move · mouse looks · T teleport (3 gold) · M map · Esc pause"
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hint.position = Vector2(16, -34)
 	hint.add_theme_font_size_override("font_size", 15)
@@ -647,10 +819,6 @@ func _build_ui() -> void:
 	again.text = "Play again"
 	again.pressed.connect(restart)
 	panel.get_node("vbox").add_child(again)
-	var quit2 := Button.new()
-	quit2.text = "Quit"
-	quit2.pressed.connect(func(): get_tree().quit())
-	panel.get_node("vbox").add_child(quit2)
 
 
 func _menu_panel() -> Control:
@@ -690,10 +858,6 @@ func _menu_layer(title: String, subtitle: String, btn_text: String, btn_fn: Call
 	b.text = btn_text
 	b.pressed.connect(btn_fn)
 	panel.get_node("vbox").add_child(b)
-	var q := Button.new()
-	q.text = "Quit"
-	q.pressed.connect(func(): get_tree().quit())
-	panel.get_node("vbox").add_child(q)
 	return layer
 
 
