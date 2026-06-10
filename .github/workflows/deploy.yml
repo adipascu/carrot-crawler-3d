@@ -1,0 +1,52 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GODOT_VERSION: "4.6.3"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and web export template
+        run: |
+          curl -fsSLO https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          curl -fsSLO https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q -j Godot_v${GODOT_VERSION}-stable_export_templates.tpz \
+            templates/web_nothreads_release.zip templates/version.txt \
+            -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+      - name: Import project
+        run: ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path godot3d --import || true
+      - name: Selftest
+        run: ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path godot3d -- --selftest | grep "SELFTEST PASSED"
+      - name: Export web build
+        run: |
+          mkdir -p godot3d/web
+          ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path godot3d --export-release "Web" web/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: godot3d/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -819,6 +819,7 @@ func _build_ui() -> void:
 	again.text = "Play again"
 	again.pressed.connect(restart)
 	panel.get_node("vbox").add_child(again)
+	panel.get_node("vbox").add_child(_source_button())
 
 
 func _menu_panel() -> Control:
@@ -858,7 +859,15 @@ func _menu_layer(title: String, subtitle: String, btn_text: String, btn_fn: Call
 	b.text = btn_text
 	b.pressed.connect(btn_fn)
 	panel.get_node("vbox").add_child(b)
+	panel.get_node("vbox").add_child(_source_button())
 	return layer
+
+
+func _source_button() -> Button:
+	var b := Button.new()
+	b.text = "Source code"
+	b.pressed.connect(func(): OS.shell_open("https://github.com/adipascu/carrot-crawler-3d"))
+	return b
 
 
 func selftest() -> void:
