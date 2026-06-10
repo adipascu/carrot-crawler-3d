@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Carrot Crawler - terminal raycaster</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { background: #111; color: #ccc; font-family: system-ui, sans-serif;
+       display: flex; flex-direction: column; align-items: center; margin: 0; padding: 12px; }
+h1 { font-size: 18px; font-weight: 600; margin: 6px 0; }
+#term { font: 13px/1.08 "Menlo", "Consolas", monospace; background: #0a0a0a;
+        padding: 10px; border-radius: 8px; white-space: pre; margin: 6px 0; }
+#status { min-height: 1.4em; color: #eb6; font: 15px monospace; }
+nav { margin-top: 8px; font-size: 13px; }
+nav a { color: #8ac; text-decoration: none; margin: 0 10px; }
+nav a:hover { text-decoration: underline; }
+p.keys { font-size: 13px; color: #888; margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>Carrot Crawler - the terminal raycaster, in your browser</h1>
+<p class="keys">Click the screen to capture the mouse and look around. WASD moves, T teleports, M map, Esc pauses, Q quits.</p>
+<pre id="term"></pre>
+<div id="status"></div>
+<nav>
+<a href="../">all versions</a>
+<a href="https://github.com/adipascu/carrot-crawler-3d" rel="noopener">source</a>
+</nav>
+<script>
+var params = new URLSearchParams(location.search);
+var Module = {
+	arguments: params.get("save") ? [params.get("save")] : [],
+	print: function(line) {
+		if (line && line.charCodeAt(0) !== 27)
+			document.getElementById("status").textContent =
+				line + "  (reload the page to play again)";
+	}
+};
+</script>
+<script src="prog3d.js"></script>
+</body>
+</html>

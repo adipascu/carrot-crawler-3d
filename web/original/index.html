@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jhshrvdp - the original IOCCC 2025 entry</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { background: #111; color: #ccc; font-family: system-ui, sans-serif;
+       display: flex; flex-direction: column; align-items: center; margin: 0; padding: 16px; }
+h1 { font-size: 18px; font-weight: 600; }
+#term { font: 16px/1.12 "Menlo", "Consolas", monospace; background: #0a0a0a;
+        padding: 12px; border-radius: 8px; white-space: pre; margin: 8px 0; }
+#status { min-height: 1.4em; color: #eb6; font: 15px monospace; }
+nav { margin-top: 10px; font-size: 13px; }
+nav a { color: #8ac; text-decoration: none; margin: 0 10px; }
+nav a:hover { text-decoration: underline; }
+p.keys { font-size: 13px; color: #888; }
+</style>
+</head>
+<body>
+<h1>jhshrvdp - the original IOCCC 2025 entry, untouched</h1>
+<p class="keys">WASD moves, T teleports (3 score), Q quits. Every keypress is one turn.</p>
+<pre id="term"></pre>
+<div id="status"></div>
+<nav>
+<a href="../">all versions</a>
+<a href="https://github.com/adipascu/carrot-crawler-3d" rel="noopener">source</a>
+<a href="https://www.ioccc.org/2025/jhshrvdp/index.html" rel="noopener">IOCCC entry page</a>
+</nav>
+<script>
+var params = new URLSearchParams(location.search);
+var Module = {
+	arguments: params.get("save") ? [params.get("save")] : [],
+	print: function(line) {
+		if (line && line.charCodeAt(0) !== 27)
+			document.getElementById("status").textContent =
+				line + "  (reload the page to play again)";
+	}
+};
+</script>
+<script src="prog.js"></script>
+</body>
+</html>

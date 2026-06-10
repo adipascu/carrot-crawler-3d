@@ -37,9 +37,22 @@ jobs:
         run: |
           mkdir -p godot3d/web
           ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path godot3d --export-release "Web" web/index.html
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Build terminal versions
+        run: |
+          mkdir -p site/original site/terminal3d site/godot
+          emcc -O2 -Iweb/shim web/shim/curses_shim.c prog.c \
+            -o site/original/prog.js -sASYNCIFY -sENVIRONMENT=web
+          emcc -O2 -Iweb/shim -DSHIM_ROWS=32 -DSHIM_COLS=110 -DSHIM_MOUSE=1 \
+            web/shim/curses_shim.c prog3d.c \
+            -o site/terminal3d/prog3d.js -sASYNCIFY -sENVIRONMENT=web -lm
+          cp web/site/index.html site/
+          cp web/original/index.html site/original/
+          cp web/terminal3d/index.html site/terminal3d/
+          cp godot3d/web/* site/godot/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: godot3d/web
+          path: site
 
   deploy:
     needs: build
