@@ -1,3 +1,6 @@
+#   ___
+#      |___    stairs between floors
+#          |___
 extends Area3D
 
 var main: Node3D

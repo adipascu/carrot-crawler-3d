@@ -1,3 +1,6 @@
+#   ___
+#      |___    first person legs and eyes
+#          |___
 extends CharacterBody3D
 
 const SPEED := 5.0

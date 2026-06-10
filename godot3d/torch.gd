@@ -1,3 +1,6 @@
+#   ___
+#      |___    fire flickers
+#          |___
 extends OmniLight3D
 
 var phase := randf() * TAU

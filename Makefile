@@ -236,4 +236,4 @@ clobber: clean
 ###################
 
 prog3d: prog3d.c
-	${CC} -O2 -g -Wall -Wextra -o $@ prog3d.c -lcurses -lm
+	${CC} -O2 -g -Wall -Wextra -Wno-misleading-indentation -o $@ prog3d.c -lcurses -lm

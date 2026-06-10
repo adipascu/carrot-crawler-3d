@@ -1,3 +1,6 @@
+#   ___
+#      |___    gold, spinning
+#          |___
 extends Area3D
 
 var main: Node3D

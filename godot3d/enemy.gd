@@ -1,3 +1,6 @@
+#   ___
+#      |___    the carrot: hops, chases, bites
+#          |___
 extends CharacterBody3D
 
 const SPEED := 2.4

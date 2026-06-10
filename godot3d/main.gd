@@ -1,3 +1,9 @@
+#   ___
+#      |___                              carrot crawler 3d
+#          |___                 you are @ . grab $ . dodge ^
+#              |___        > descends . < returns . t escapes
+#                  |___    one hundred floors down lies a win
+#                      |___
 extends Node3D
 
 const L := 80
